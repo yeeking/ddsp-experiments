@@ -424,6 +424,10 @@ class Generator():
     
     @staticmethod
     def check_config(config):
+        """
+        verify the sent config has the correct fields
+        uses assert so it will end execution if anything is missing
+        """
         want_keys = ["features", "input_buf_length", "frames", "db_boost", "model_dir", "frames"]
         for key in want_keys:
             assert key in config.keys(), "missing config key "+key
@@ -433,7 +437,8 @@ class Generator():
 
     def add_transforms(self, config, duration):
         """
-
+        adds the network bending transforms to the network
+        as specified by config
         """
         for l in self.layers:
         #if transforms given for layer l
@@ -502,7 +507,10 @@ class Generator():
         return output
 
 def main(input_file, output_file, model_dir, samplerate = 16000):
-  
+    """
+    resynthesize the pitches and amplitudes in input_file using the model in
+    model_dir and write the result to output_file
+    """
     ##See Instructions (https://github.com/Louismac/network-bending/blob/main/README.md)
     config = {}
     config["model_dir"] = model_dir
