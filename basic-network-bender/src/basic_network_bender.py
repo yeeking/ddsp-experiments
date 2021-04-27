@@ -525,7 +525,7 @@ def main(input_file, output_file, model_dir, samplerate = 16000):
     config["FC1"] = [
     {
         "function":"oscillate",
-        "units":0.7,
+        "units":0.0,
         "params":[
             {"name":"depth",
             "args":{
@@ -546,6 +546,9 @@ def main(input_file, output_file, model_dir, samplerate = 16000):
         ]
     }
     ]
+    config["FC1"] = [
+        {}
+    ]
     g = Generator()
     g.check_config(config)
     
@@ -558,8 +561,9 @@ def main(input_file, output_file, model_dir, samplerate = 16000):
     wavutils.write(output_file, samplerate, np.array(audio_gen))
     return
 
-main('../audio_data/test_input.wav', '../audio_data/test_output.wav', '../Models/Flute2021New/')
-
+#main('../audio_data/test_input.wav', '../audio_data/test_output.wav', '../Models/Flute2021New/')
+main('../audio_data/test_input.wav', '../audio_data/test_output.wav', '../../models/Keeley16kV1/ddsp-solo-instrument/')
+#main('../audio_data/test_input.wav', '../audio_data/test_output.wav', '../../models/Whitney16kV4/ddsp-solo-instrument/')
 
 
 
