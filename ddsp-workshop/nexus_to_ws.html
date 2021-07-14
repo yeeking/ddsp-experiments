@@ -12,7 +12,12 @@
         var socket_ready = false; 
   var toggle = new Nexus.Toggle("#toggle");
   var slider = new Nexus.Slider("#slider");
-  
+
+        
+  slider.min = 200;
+  slider.max = 1000;
+  slider.value = 50;
+
   // Listen for interface events
   toggle.on('change',function(v) {
   
@@ -21,12 +26,14 @@
   slider.on('change',function(v) {
       if (socket_ready)
       {
-          socket.send(v);
+        let data = {};
+        data.f0_hz = [v];
+        data.loudness_db = [-20];
+        
+        socket.send(JSON.stringify(data));
       }
   });
-  slider.min = 0;
-  slider.max = 100;
-  slider.value = 50;
+        
 
 </script>
 

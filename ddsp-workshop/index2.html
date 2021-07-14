@@ -1,0 +1,64 @@
+
+<html>
+<head>
+    <script src="https://mimicproject.com/libs/nexusUI.js"></script>
+  
+    </head>
+</head>
+<body>
+  <div id="power"></div>
+  <div id="gain"></div>
+  
+    
+      <script>
+        // Create interfaces
+  var power = new Nexus.Toggle("#power");
+  var gain = new Nexus.Slider("#gain");
+  
+  
+  // Listen for interface events
+  power.on('change',function(v) {
+  
+  });
+  
+  gain.on('change',function(v) {
+  
+  });
+  gain.min = -100;
+  gain.max = 0;
+  gain.value = -30;
+      </script>
+      
+  
+  <script>
+  
+  let socket = new WebSocket("ws://localhost:8765");
+  
+  socket.onopen = function(e) {
+    //alert("[open] Connection established");
+    //alert("Sending to server");
+    socket.send("My name is Matthew");
+  };
+  
+  socket.onmessage = function(event) {
+    alert(`[message] Data received from server: ${event.data}`);
+  };
+  
+  socket.onclose = function(event) {
+    if (event.wasClean) {
+      alert(`[close] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
+    } else {
+      // e.g. server process killed or network down
+      // event.code is usually 1006 in this case
+      alert('[close] Connection died');
+    }
+  };
+  
+  socket.onerror = function(error) {
+    alert(`[error] ${error.message}`);
+  };
+  
+  </script>
+    
+      </body>
+    </html>

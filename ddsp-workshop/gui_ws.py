@@ -289,6 +289,35 @@ class NetworkBenderFrame(Frame):
         self.pack()
 
 
+def ws_msg_to_audio_features(msg):
+    """
+    parses messages received from the websocket client
+    assumes they are JSON like this: "{"f0_hz":[100, 200], "loudness_db":[-10, -50]}"
+    """
+    data = {}
+    try:
+        data = json.loads(msg)
+    except:
+        print("gui_ws.py::ws_message msg is not good JSON. Here's what you sent", msg)
+        return
+    # should be good
+    print(type(data))
+    if "f0_hz" in data.keys():
+        print("f0_hz good")
+    else:
+        print("f0_hz bad")
+        return
+    if "loudness_db" in data.keys():
+        print("loudness_db good")
+    else:
+        print("loudness_db bad")
+        return 
+    # set up the types
+    data['f0_hz'] = np.array(data['f0_hz'])
+    data['loudness_db'] = np.array(data['loudness_db'])
+    
+    return np.array([data])
+
 
 def main(config):
     root = Tk()
@@ -297,20 +326,23 @@ def main(config):
     # define a callback in same scope so can access app
     def ws_responder(msg):
         """
-        callback for the websocket
+        callback for the websocket - putting it here so we have
+        the app object in scope, since app has all the interesting stuff in it
         """
         print("ws_responder: ", msg)
         if hasattr(app, 'g'):
-            af = app.get_audio_features()
-            print("app ready - feature type:", type(af))
-            print("app ready - feature [0] type:", type(af[0]))
-            print("app ready - feature [0] keys:", af[0].keys())
-            print("app ready - feature [0] len:", af[0]["f0_hz"])
-            
-            af = np.array([{"f0_hz":np.array([100, 200]), "loudness_db":np.array([-20, -40])}])
-            app.set_audio_features(af)
+            #af = app.get_audio_features()
+            # print("app ready - feature type:", type(af))
+            # print("app ready - feature [0] type:", type(af[0]))
+            # print("app ready - feature [0] keys:", af[0].keys())
+            # print("app ready - feature [0] len:", af[0]["f0_hz"])
+            af = ws_msg_to_audio_features(msg)    
+            #af = np.array([{"f0_hz":np.array([400, 400]), "loudness_db":np.array([-20, -40])}])
+            if af is not None:
+                app.set_audio_features(af)
         else:
             print("app not ready yet")
+    # fire up the websocket with our callback
     ws.run_websocket(ws_responder) 
     
     root.mainloop()
