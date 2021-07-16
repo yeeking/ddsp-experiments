@@ -18,6 +18,7 @@ from time import sleep
 import time
 import threading
 import mido
+import datetime
 
 class UnitProvider():
     def __init__(self):
@@ -399,8 +400,9 @@ class Generator():
           config["features"]["start"],
           config["features"]["end"]
         )
-        self.buf_length = config["input_buf_length"]
+        self.buf_length = config["audio_callback_buffer_length"]
         self.frames = config["frames"]
+
         db_boost = config["db_boost"]
         r = np.floor if floor else np.ceil
         steps = r(len(audio_features["f0_hz"]) / self.frames )
@@ -424,13 +426,28 @@ class Generator():
         split = [get_dict(i, audio_features) for i in np.arange(steps)]
         return np.array(split), steps
 
+    def append_audio_features(self, audio_features):
+        """
+        Write the most recent audio features into the audio_features buffer
+        Should happen every 1/self.frames seconds
+        """
+        self.audio_features[0]["f0_hz"][self.feature_ptr] = audio_features["f0_hz"][0]
+        self.audio_features[0]["loudness_db"][self.feature_ptr] = audio_features["loudness_db"][0]
+        self.feature_ptr = (self.feature_ptr + 1) % self.frames
+
+    def new_audio_features(self, audio_features):
+        """
+        Update the latest audio features to pull into audio features
+        """
+        self.features_to_poll = audio_features;
+
     @staticmethod
     def check_config(config):
         """
         verify the sent config has the correct fields
         uses assert so it will end execution if anything is missing
         """
-        want_keys = ["features", "input_buf_length", "frames", "db_boost", "model_dir", "frames"]
+        want_keys = ["features", "audio_callback_buffer_length", "frames", "db_boost", "model_dir", "frames"]
         for key in want_keys:
             assert key in config.keys(), "missing config key "+key
             print("check_config::Config has key", key)
@@ -460,7 +477,7 @@ class Generator():
                     transform_arguments[p["name"]] = BendingParam()
                 else:
                     transform_arguments[p["name"]] = existing[p["name"]]
-                transform_arguments[p["name"]].res = self.frames
+                #transform_arguments[p["name"]].res = self.frames
                 transform_arguments[p["name"]].len = int(np.ceil(self.duration))
                 transform_arguments[p["name"]].value = p["value"]
                 if "lfo" in p.keys():
@@ -497,6 +514,13 @@ class Generator():
             function = getattr(self.transforms[c["layer"]], c["function"])
             self.model.decoder.add_transform(c["layer"], str(i), function, args)
 
+    def start_midi(self,feature_csv_filename, audio_filename, config):
+        self.start_realtime(feature_csv_filename, audio_filename, config, True)
+
+    def update_config(self, config):
+        self.config = config
+        self.model.decoder.clear_transforms()
+        self.add_transforms(config)
 
     def run_features_through_model(self, audio_features):
         """
@@ -514,37 +538,11 @@ class Generator():
         runs a single block of features through the model
         returns and audio signal which is the result
         """
-        #print("getting next block")
+        ft["f0_hz"] = np.array(ft["f0_hz"])
+        ft["loudness_db"] = np.array(ft["loudness_db"])
         outputs = self.model(ft, training=False)
         audio = self.model.get_audio_from_outputs(outputs)
         return audio
-
-
-    def play_sine(self):
-        start_idx = [0]
-        samplerate = 16000
-        sd.default.samplerate = samplerate
-        sd.default.channels = 1 # only one channel for now!
-        def callback(outdata, frames, time, status):
-            if status:
-                print(status, file=sys.stderr)
-            t = (start_idx[0] + np.arange(frames)) / samplerate
-            t = t.reshape(-1, 1)
-            outdata[:] = 0.5 * np.sin(2 * np.pi * 440 * t)
-            start_idx[0] += frames
-
-        with sd.OutputStream(channels=1, callback=callback,
-                             samplerate=samplerate):
-            print('#' * 80)
-            sd.sleep(int(60 * 1000))
-
-    def start_midi(self,feature_csv_filename, audio_filename, config):
-        self.start_realtime(feature_csv_filename, audio_filename, config, True)
-
-    def update_config(self, config):
-        self.config = config
-        self.model.decoder.clear_transforms()
-        self.add_transforms(config)
 
     def start_realtime(self, feature_csv_filename, audio_filename, config, midi = False):
         """
@@ -554,21 +552,32 @@ class Generator():
         sd.default.samplerate = config["sample_rate"]
         sd.default.channels = 1 # only one channel for now!
         self.config = config
+        self.stop = False;
 
         # setup the model
         self.setup_resynthesis(config["model_dir"])
         # get the features ready
         self.audio_features, duration = self.load_and_prepare_features_for_model(feature_csv_filename, audio_filename, config)
+        self.feature_ptr = 0;
+        self.features_to_poll = {
+            "f0_hz":[100],
+            "loudness_db":[-20]
+        }
+        self.audio_features = [{
+            "f0_hz":np.ones(self.frames)*100,
+            "loudness_db":np.ones(self.frames)*-20
+        }]
         self.duration = duration
         # setup the bending transforms
-        for l in self.layers:
-            self.transforms[l].res = self.frames;
+        # for l in self.layers:
+        #     self.transforms[l].res = self.frames;
         self.add_transforms(self.config)
 
-        model_buffer_length = self.config["input_buf_length"]
-        self.config["callback_buffer_length"] = model_buffer_length
+        audio_callback_buffer_length = self.config["audio_callback_buffer_length"]
+        self.config["audio_callback_buffer_length"] = audio_callback_buffer_length
 
         audio_ptr = [0]
+        prev_signal = [self.run_feature_block_through_model(self.audio_features[audio_ptr[0]])]
         output_signal = [self.run_feature_block_through_model(self.audio_features[audio_ptr[0]])]
 
         if midi and not config["midi_port"] == "":
@@ -597,6 +606,30 @@ class Generator():
             self.inport = mido.open_input(config["midi_port"])
             self.inport.callback = receive_message
 
+        #Called on AppendAudioFeaturesTask Thread to poll in audio_features
+        def append_audio_features(ctr):
+            self.append_audio_features(self.features_to_poll)
+            sleep(1/self.frames)
+
+        d=[0]
+        #This thread is called every 1/self.frames seconds
+        #Collects in the most recently updated audio features, ready for generation
+        class AppendAudioFeaturesTask:
+            def __init__(self):
+                self._running = True
+            def terminate(self):
+                self._running = False
+            def run(self, action):
+                while self._running:
+                    action(1)
+        try:
+            d[0].terminate()
+        except:
+            print("no d yet")
+        d[0] = AppendAudioFeaturesTask()
+        appendThread = threading.Thread(target = d[0].run, args = (append_audio_features,))
+        appendThread.start()
+
         class GenerateAudioTask:
             def __init__(self):
                 self._running = True
@@ -606,23 +639,44 @@ class Generator():
                 action(1)
 
         def generate_audio(ctr):
-            sleep(2.5)
-            print("generating block")
             audio_ptr[0] = (audio_ptr[0] + 1) % len(self.audio_features)
-            input = self.audio_features[audio_ptr[0]]
-            #print("generate_audio", input)
-            #print("generate_audio: block size, shape", len(input), input.shape)
-            output_signal[0] = self.run_feature_block_through_model(self.audio_features[audio_ptr[0]])
-            print("done generating block")
+
+            input = self.audio_features[audio_ptr[0]].copy()
+            #Only input features up til the point we have collected them
+            input["f0_hz"] = input["f0_hz"][:self.feature_ptr]
+            input["loudness_db"] = input["loudness_db"][:self.feature_ptr]
+            print("generating from ", self.feature_ptr, "frames")
+            prev_signal = output_signal.copy()
+            #Overwrite audio_features with self.frames worth of the last received feature
+            #This essentially helps with note continuation
+            self.audio_features = [{
+                "f0_hz":np.ones(self.frames) * input["f0_hz"][len(input["f0_hz"])-1],
+                "loudness_db":np.ones(self.frames) * input["loudness_db"][len(input["loudness_db"])-1]
+            }]
+            self.feature_ptr = 0
+            t1 = datetime.datetime.now()
+            output_signal[0] = self.run_feature_block_through_model(input)
+            t2 = datetime.datetime.now()
+            print("done generating block", (t2 - t1).total_seconds())
 
         c = [0]
 
         def audio_callback(outdata, frames, time, status):
             if status:
                 print(status)
-            print("block",audio_ptr[0],)
-            o = np.reshape(output_signal[0], (-1, 1))
-            outdata[:] = o
+            xfade = 1500
+            chop = 500
+            prev = np.reshape(prev_signal[0], (-1))
+            out = np.array(np.reshape(output_signal[0], (-1)))
+            #Chop off the beginning (attempting to remove pop?)
+            out = out[chop:]
+            fadeout = prev[-xfade:]*np.linspace(1,0,xfade)
+            fadein = out[0:xfade]*np.linspace(0,1,xfade)
+            #Replace beginning with xfade from prev
+            out[0:xfade] = fadeout+fadein
+            #Remove end (will be xfaded into next buffer)
+            out = out[:-xfade]
+            outdata[:] = np.reshape(out,(out.shape[0],1))
             try:
                 c[0].terminate()
             except:
@@ -631,8 +685,8 @@ class Generator():
             t = threading.Thread(target = c[0].run, args = (generate_audio,))
             t.start()
 
-        with sd.OutputStream(channels=1, samplerate=self.config["sample_rate"], blocksize=self.config["callback_buffer_length"], callback=audio_callback):
-            for i in np.linspace(0.5,1,1000):
+        with sd.OutputStream(channels=1, samplerate=self.config["sample_rate"], blocksize=audio_callback_buffer_length, callback=audio_callback):
+            while not self.stop:
                 sd.sleep(int(1 * 1000))
 
     def resynthesize(self, feature_csv_filename, audio_filename, config):
@@ -648,8 +702,8 @@ class Generator():
         # get the features ready
         audio_features, duration = self.load_and_prepare_features_for_model(feature_csv_filename, audio_filename, config)
         # setup the bending transforms
-        for l in self.layers:
-            self.transforms[l].res = self.frames;
+        # for l in self.layers:
+        #     self.transforms[l].res = self.frames;
         self.add_transforms(config, duration)
         # resynthesize
         output = self.run_features_through_model(audio_features)

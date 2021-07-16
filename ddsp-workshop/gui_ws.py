@@ -34,27 +34,26 @@ class NetworkBenderFrame(Frame):
         so that it starts using them for resynthesis
         should assert you are not sending it garbage
         """
-        assert type(audio_features) == np.ndarray, "set_audio_features:: audio features should be numpy.ndarray but are " + str(type(audio_features))
-        assert len(audio_features) > 0, "set_audio_features:: audio features should be len > 0 but are " + str(len(audio_features))
-        assert type(audio_features[0]) == dict, "set_audio_features:: audio features should be array of dicts but are " + str(type(audio_features[0]))
-        assert "loudness_db" in audio_features[0], "set_audio_features:: audio features should have loudness_db key but keys are:" + str(audio_features[0].keys())
-        assert "f0_hz" in audio_features[0], "set_audio_features:: audio features should have f0_hz key but keys are:" + str(audio_features[0].keys)
-        assert type(audio_features[0]["loudness_db"]) == np.ndarray, "set_audio_features:: f0_hz should be np.ndarray but is" + str(type(audio_features[0]["loudness_db"]))
-        
-        assert type(audio_features[0]["f0_hz"]) == np.ndarray, "set_audio_features:: f0_hz should be np.ndarray but is" + str(type(audio_features[0]["f0_hz"]))
-
-        
-
-        
-        
-        #assert type(audio_features) == 
-        self.g.audio_features = audio_features
+        # assert type(audio_features) == np.ndarray, "set_audio_features:: audio features should be numpy.ndarray but are " + str(type(audio_features))
+        # assert len(audio_features) > 0, "set_audio_features:: audio features should be len > 0 but are " + str(len(audio_features))
+        # assert type(audio_features[0]) == dict, "set_audio_features:: audio features should be array of dicts but are " + str(type(audio_features[0]))
+        # assert "loudness_db" in audio_features[0], "set_audio_features:: audio features should have loudness_db key but keys are:" + str(audio_features[0].keys())
+        # assert "f0_hz" in audio_features[0], "set_audio_features:: audio features should have f0_hz key but keys are:" + str(audio_features[0].keys)
+        # assert type(audio_features[0]["loudness_db"]) == np.ndarray, "set_audio_features:: f0_hz should be np.ndarray but is" + str(type(audio_features[0]["loudness_db"]))
+        #
+        # assert type(audio_features[0]["f0_hz"]) == np.ndarray, "set_audio_features:: f0_hz should be np.ndarray but is" + str(type(audio_features[0]["f0_hz"]))
+        #print("sending audio features from gui class", audio_features)
+        #Update the audio features so they get pulled into a buffer
+        self.g.new_audio_features(audio_features)
 
     def get_audio_features(self):
         """
         retrieve the set of audio features currently being used for resynthesis
         """
         return self.g.audio_features
+
+    def stop(self):
+        self.g.stop = True;
 
     def run(self):
         model_name = self.input_args["model"]
@@ -85,8 +84,9 @@ class NetworkBenderFrame(Frame):
             #add boost to loudness feature of input
             config["db_boost"] = 10
             #4 secs at 16000
-            config["input_buf_length"] = 4 * samplerate
-            config["frames"] = 1000
+            config["audio_callback_buffer_length"] = int(samplerate)
+            #Number of frames put into the model at a time
+            config["frames"] = 250
             self.update_transforms_from_ui()
             config["transforms"] = self.transforms
             if not hasattr(self, 'g'):
@@ -229,6 +229,13 @@ class NetworkBenderFrame(Frame):
         )
         button.grid(column=0, row = self.NUM_TRANSFORMS)
 
+        button = Button(
+           self,
+           text="Stop",
+           command=self.stop
+        )
+        button.grid(column=0, row = 0)
+
         Label(self, text="layer").grid(row=0,column=1)
         Label(self, text="transform").grid(row=0,column=2)
         Label(self, text="units/value").grid(row=0,column=3)
@@ -300,51 +307,51 @@ def ws_msg_to_audio_features(msg):
     except:
         print("gui_ws.py::ws_message msg is not good JSON. Here's what you sent", msg)
         return
-    # should be good
-    print(type(data))
-    if "f0_hz" in data.keys():
-        print("f0_hz good")
-    else:
-        print("f0_hz bad")
-        return
-    if "loudness_db" in data.keys():
-        print("loudness_db good")
-    else:
-        print("loudness_db bad")
-        return 
-    # set up the types
-    data['f0_hz'] = np.array(data['f0_hz'])
-    data['loudness_db'] = np.array(data['loudness_db'])
-    
-    return np.array([data])
+    # # should be good
+    # print(type(data))
+    # if "f0_hz" in data.keys():
+    #     print("f0_hz good")
+    # else:
+    #     print("f0_hz bad")
+    #     return
+    # if "loudness_db" in data.keys():
+    #     print("loudness_db good")
+    # else:
+    #     print("loudness_db bad")
+    #     return
+    # # set up the types
+    data['f0_hz'] = data['f0_hz']
+    data['loudness_db'] = data['loudness_db']
+
+    return data
 
 
 def main(config):
     root = Tk()
     app = NetworkBenderFrame(config)
-    print("gui_ws.py::main running the websocket") 
+    print("gui_ws.py::main running the websocket")
     # define a callback in same scope so can access app
     def ws_responder(msg):
         """
         callback for the websocket - putting it here so we have
         the app object in scope, since app has all the interesting stuff in it
         """
-        print("ws_responder: ", msg)
+        #print("ws_responder: ", msg)
         if hasattr(app, 'g'):
             #af = app.get_audio_features()
             # print("app ready - feature type:", type(af))
             # print("app ready - feature [0] type:", type(af[0]))
             # print("app ready - feature [0] keys:", af[0].keys())
             # print("app ready - feature [0] len:", af[0]["f0_hz"])
-            af = ws_msg_to_audio_features(msg)    
+            af = ws_msg_to_audio_features(msg)
             #af = np.array([{"f0_hz":np.array([400, 400]), "loudness_db":np.array([-20, -40])}])
             if af is not None:
                 app.set_audio_features(af)
         else:
             print("app not ready yet")
     # fire up the websocket with our callback
-    ws.run_websocket(ws_responder) 
-    
+    ws.run_websocket(ws_responder)
+
     root.mainloop()
 
 
@@ -367,12 +374,10 @@ if __name__ == '__main__':
     if args.midi_port:
         config["midi_port"] = args.midi_port
     # do some asserts:
-    assert os.path.exists(config["input_audio"]), "Input audio does not exist: " + config["input_audio"]
+    #assert os.path.exists(config["input_audio"]), "Input audio does not exist: " + config["input_audio"]
     assert os.path.exists(config["model"]), "Model folder does not exist: " + config["model"]
     # check for the gin file
     gin_file = os.path.join(config["model"], "operative_config-0.gin")
     assert os.path.exists(gin_file), "Model gin file not in folder " + gin_file
     print("gui_ws.py:: running main")
     main(config)
-
-    
