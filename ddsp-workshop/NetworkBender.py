@@ -676,6 +676,10 @@ class Generator():
             out[0:xfade] = fadeout+fadein
             #Remove end (will be xfaded into next buffer)
             out = out[:-xfade]
+            # make sure the out array is the same size as the outdata array
+            if out.shape[0] != outdata.shape[0]:
+                #print("audio_callback:: shape mistmatch out shape, outdata shape ", out.shape, outdata.shape)
+                out = np.concatenate((out, np.zeros(outdata.shape[0] - out.shape[0])))   
             outdata[:] = np.reshape(out,(out.shape[0],1))
             try:
                 c[0].terminate()

@@ -57,6 +57,7 @@ class NetworkBenderFrame(Frame):
             config["frames"] = 1000
             self.update_transforms_from_ui()
             config["transforms"] = self.transforms
+            config["audio_callback_buffer_length"] = 16000
             if not hasattr(self, 'g'):
                 self.g = Generator()
                 self.g.on_update_transforms = self.update_ui_from_dict
@@ -273,7 +274,8 @@ if __name__ == '__main__':
     config = {
         "midi_port":"",
         "model":"Flute2021New",
-        "input_audio":"i_will_always_1min.wav"
+        "input_audio":"i_will_always_1min.wav", 
+        "audio_callback_buffer_length":16000
     }
     print(args)
     if args.input_audio:

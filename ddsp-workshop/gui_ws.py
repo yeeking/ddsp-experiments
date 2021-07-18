@@ -73,18 +73,21 @@ class NetworkBenderFrame(Frame):
                 action()
 
         def run_model():
+            print("gui_ws run_model")
             samplerate = 16000
             input_file = AUDIO_DATA_DIR + self.input_args["input_audio"]
             config = {}
             config["model_dir"] = MODEL_DIR
-            config["midi_port"] = self.input_args["midi_port"]
+            config["midi_port"] = self.input_args["midi_port"] 
             config["sample_rate"] = samplerate
             #pick how much of input file to do (0->1)
             config["features"] = {"file_name":input_file, "start":0, "end":1}
             #add boost to loudness feature of input
             config["db_boost"] = 10
             #4 secs at 16000
-            config["audio_callback_buffer_length"] = int(samplerate)
+            config["audio_callback_buffer_length"] = self.input_args["audio_callback_buffer_length"]
+    
+            # config["audio_callback_buffer_length"] = int(samplerate) * 5
             #Number of frames put into the model at a time
             config["frames"] = 250
             self.update_transforms_from_ui()
@@ -364,7 +367,8 @@ if __name__ == '__main__':
     config = {
         "midi_port":"",
         "model":"Flute2021New",
-        "input_audio":"i_will_always_1min.wav"
+        "input_audio":"i_will_always_1min.wav",
+       "audio_callback_buffer_length":16000 * 10
     }
     print(args)
     if args.input_audio:
