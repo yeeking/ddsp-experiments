@@ -229,36 +229,10 @@ class Generator():
         ckpt_files = [f for f in tf.io.gfile.listdir(model_dir) if 'ckpt' in f]
         ckpt_name = ckpt_files[0].split('.')[0]
         ckpt = os.path.join(model_dir, ckpt_name)
-
-        # Ensure dimensions and sampling rates are equal
-        #time_steps_train = gin.query_parameter('DefaultPreprocessor.time_steps')
-        time_steps_train = gin.query_parameter('F0LoudnessPreprocessor.time_steps')
-        #n_samples_train = gin.query_parameter('Additive.n_samples')
-        n_samples_train = gin.query_parameter('Harmonic.n_samples')
-        hop_size = int(n_samples_train / time_steps_train)
-
-        time_steps = int(self.buf_length / hop_size)
-        required_input_samples = time_steps * hop_size
-        print("time steps", time_steps, time_steps_train)
-        print("input_samples", required_input_samples, n_samples_train)
-
-        gin_params = [
-            'RnnFcDecoder.input_keys = ("f0_scaled", "ld_scaled", "z")',
-            'Additive.n_samples = {}'.format(required_input_samples),
-            'FilteredNoise.n_samples = {}'.format(required_input_samples),
-            'DefaultPreprocessor.time_steps = {}'.format(time_steps),
-        ]
-
-        # with gin.unlock_config():
-        #     gin.parse_config(gin_params)
-
+    
         # Set up the model just to predict audio given new conditioning
         self.model = ddsp.training.models.Autoencoder()
         self.model.restore(ckpt)
-        # gin_file = os.path.join(model_dir, 'operative_config-0.gin')
-        # gin.parse_config_file(gin_file)
-        # self.model = ddsp.training.models.Autoencoder()
-        # self.model.restore(model_dir)
 
     def resynth_batch(self, data_dir):
         TRAIN_TFRECORD = data_dir + '/train.tfrecord'
@@ -401,7 +375,7 @@ class Generator():
           config["features"]["end"]
         )
         self.buf_length = config["audio_callback_buffer_length"]
-        self.frames = config["frames"]
+
 
         db_boost = config["db_boost"]
         r = np.floor if floor else np.ceil
@@ -552,12 +526,14 @@ class Generator():
         sd.default.samplerate = config["sample_rate"]
         sd.default.channels = 1 # only one channel for now!
         self.config = config
-        self.stop = False;
+        self.mute = False;
 
         # setup the model
         self.setup_resynthesis(config["model_dir"])
         # get the features ready
-        self.audio_features, duration = self.load_and_prepare_features_for_model(feature_csv_filename, audio_filename, config)
+        # self.audio_features, duration = #
+        # self.load_and_prepare_features_for_model(feature_csv_filename, audio_filename, config)
+        self.frames = config["frames"]
         self.feature_ptr = 0;
         self.features_to_poll = {
             "f0_hz":[100],
@@ -567,7 +543,7 @@ class Generator():
             "f0_hz":np.ones(self.frames)*100,
             "loudness_db":np.ones(self.frames)*-20
         }]
-        self.duration = duration
+        self.duration = 1
         # setup the bending transforms
         # for l in self.layers:
         #     self.transforms[l].res = self.frames;
@@ -664,22 +640,24 @@ class Generator():
         def audio_callback(outdata, frames, time, status):
             if status:
                 print(status)
-            xfade = 1500
-            chop = 500
+            xfade = 256
+            chop = 0
             prev = np.reshape(prev_signal[0], (-1))
             out = np.array(np.reshape(output_signal[0], (-1)))
             #Chop off the beginning (attempting to remove pop?)
-            out = out[chop:]
-            fadeout = prev[-xfade:]*np.linspace(1,0,xfade)
-            fadein = out[0:xfade]*np.linspace(0,1,xfade)
-            #Replace beginning with xfade from prev
-            out[0:xfade] = fadeout+fadein
-            #Remove end (will be xfaded into next buffer)
-            out = out[:-xfade]
+            # out = out[chop:]
+            # fadeout = prev[-xfade:]*np.linspace(1,0,xfade)
+            # fadein = out[0:xfade]*np.linspace(0,1,xfade)
+            # #Replace beginning with xfade from prev
+            # out[0:xfade] = fadeout+fadein
+            # #Remove end (will be xfaded into next buffer)
+            # out = out[:-xfade]
+            if self.mute:
+                out = out * 0
             # make sure the out array is the same size as the outdata array
             if out.shape[0] != outdata.shape[0]:
                 #print("audio_callback:: shape mistmatch out shape, outdata shape ", out.shape, outdata.shape)
-                out = np.concatenate((out, np.zeros(outdata.shape[0] - out.shape[0])))   
+                out = np.concatenate((out, np.zeros(outdata.shape[0] - out.shape[0])))
             outdata[:] = np.reshape(out,(out.shape[0],1))
             try:
                 c[0].terminate()
@@ -690,7 +668,7 @@ class Generator():
             t.start()
 
         with sd.OutputStream(channels=1, samplerate=self.config["sample_rate"], blocksize=audio_callback_buffer_length, callback=audio_callback):
-            while not self.stop:
+            while True:
                 sd.sleep(int(1 * 1000))
 
     def resynthesize(self, feature_csv_filename, audio_filename, config):

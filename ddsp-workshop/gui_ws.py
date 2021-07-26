@@ -52,11 +52,17 @@ class NetworkBenderFrame(Frame):
         """
         return self.g.audio_features
 
-    def stop(self):
-        self.g.stop = True;
+    def toggleMute(self):
+        if self.g.mute:
+            self.g.mute = False
+            self.mute_button.config(text = "Mute")
+        else:
+            self.g.mute = True
+            self.mute_button.config(text = "Unmute")
 
     def run(self):
         model_name = self.input_args["model"]
+        self.run_button.config(text = "Update")
         DRIVE_DIR = '.'
         if DRIVE_DIR:
             MODEL_DIR = model_name # os.path.join(DRIVE_DIR, 'Models/' + model_name)
@@ -97,7 +103,10 @@ class NetworkBenderFrame(Frame):
                 self.g.on_update_transforms = self.update_ui_from_dict
                 self.g.check_config(config)
                 # step 1: write features to CSV file
-                self.feature_csvfile = self.g.extract_features_and_write_to_file(input_file)
+                if os.path.exists(input_file):
+                    self.feature_csvfile = self.g.extract_features_and_write_to_file(input_file)
+                else:
+                    self.feature_csvfile = ""
                 # step 2: do the resynthesis
                 audio_gen = self.g.start_midi(self.feature_csvfile, input_file, config)
 
@@ -225,19 +234,19 @@ class NetworkBenderFrame(Frame):
 
         self.gui_elements= []
 
-        button = Button(
+        self.run_button = Button(
            self,
-           text="Update",
+           text="Run",
            command=self.run
         )
-        button.grid(column=0, row = self.NUM_TRANSFORMS)
+        self.run_button.grid(column=0, row = self.NUM_TRANSFORMS)
 
-        button = Button(
+        self.mute_button = Button(
            self,
-           text="Stop",
-           command=self.stop
+           text="Mute",
+           command=self.toggleMute
         )
-        button.grid(column=0, row = 0)
+        self.mute_button.grid(column=0, row = 0)
 
         Label(self, text="layer").grid(row=0,column=1)
         Label(self, text="transform").grid(row=0,column=2)
@@ -310,19 +319,11 @@ def ws_msg_to_audio_features(msg):
     except:
         print("gui_ws.py::ws_message msg is not good JSON. Here's what you sent", msg)
         return
-    # # should be good
-    # print(type(data))
-    # if "f0_hz" in data.keys():
-    #     print("f0_hz good")
-    # else:
-    #     print("f0_hz bad")
-    #     return
-    # if "loudness_db" in data.keys():
-    #     print("loudness_db good")
-    # else:
-    #     print("loudness_db bad")
-    #     return
-    # # set up the types
+    if not "f0_hz" in data.keys():
+        print("f0_hz bad")
+        return
+    if not "loudness_db" in data.keys():
+        print("loudness_db bad")
     data['f0_hz'] = data['f0_hz']
     data['loudness_db'] = data['loudness_db']
 
@@ -332,6 +333,13 @@ def ws_msg_to_audio_features(msg):
 def main(config):
     root = Tk()
     app = NetworkBenderFrame(config)
+    def on_closing():
+        print("closing")
+        root.destroy()
+        os._exit(0)
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+
     print("gui_ws.py::main running the websocket")
     # define a callback in same scope so can access app
     def ws_responder(msg):
@@ -339,15 +347,9 @@ def main(config):
         callback for the websocket - putting it here so we have
         the app object in scope, since app has all the interesting stuff in it
         """
-        #print("ws_responder: ", msg)
+        print("ws_responder: ", msg, end='\r')
         if hasattr(app, 'g'):
-            #af = app.get_audio_features()
-            # print("app ready - feature type:", type(af))
-            # print("app ready - feature [0] type:", type(af[0]))
-            # print("app ready - feature [0] keys:", af[0].keys())
-            # print("app ready - feature [0] len:", af[0]["f0_hz"])
             af = ws_msg_to_audio_features(msg)
-            #af = np.array([{"f0_hz":np.array([400, 400]), "loudness_db":np.array([-20, -40])}])
             if af is not None:
                 app.set_audio_features(af)
         else:
@@ -367,7 +369,7 @@ if __name__ == '__main__':
     config = {
         "midi_port":"",
         "model":"Flute2021New",
-        "input_audio":"i_will_always_1min.wav",
+        "input_audio":"",
        "audio_callback_buffer_length":16000
     }
     print(args)
