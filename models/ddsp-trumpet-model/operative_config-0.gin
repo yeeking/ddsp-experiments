@@ -31,7 +31,7 @@ F0LoudnessPreprocessor.time_steps = 1000
 # Parameters for FilteredNoise:
 # ==============================================================================
 FilteredNoise.initial_bias = -5.0
-FilteredNoise.n_samples = 64000
+FilteredNoise.n_samples = 18000
 FilteredNoise.name = 'filtered_noise'
 FilteredNoise.scale_fn = @core.exp_sigmoid
 FilteredNoise.window_size = 0
@@ -42,7 +42,7 @@ get_model.model = @models.Autoencoder()
 
 # Parameters for Harmonic:
 # ==============================================================================
-Harmonic.n_samples = 64000
+Harmonic.n_samples = 18000
 Harmonic.name = 'harmonic'
 Harmonic.normalize_below_nyquist = True
 Harmonic.sample_rate = 16000
