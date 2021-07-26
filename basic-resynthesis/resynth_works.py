@@ -178,7 +178,7 @@ sample_rate = 16000
 
 input_file = "./keeley_cut1.wav"
 model_name = "Flute2021New"
-model_name = "Keeley16kV1"
+#model_name = "Keeley16kV1"
 
 audio_sig = get_audio_input_file(input_file)
 #audio_sig,sr = librosa.load(input_file, sr=sample_rate)

@@ -24,6 +24,19 @@ curl https://pyenv.run | bash
 # verify python version
 python --version
 Python 3.7.0
+
+```
+Now I found that next time I ran it I could not get the virtualenv to start up.
+So instead I just install 3.7.0 with pyenv, then use the following commands to add it to tha path:
+
+```
+export PATH=$PATH:~/.pyenv/bin:~/.pyenv/versions/3.7.0/bin/
+#eval "$(pyenv init -)"  
+#eval "$(pyenv virtualenv-init -)"
+```
+
+
+
 # go for it!
 pip install ddsp
 # I found this installed TF 2.4 so I also upgraded that
@@ -34,3 +47,5 @@ import ddsp
 ddsp.__version__
 1.2.0
 ```
+
+
